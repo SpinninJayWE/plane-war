@@ -3,7 +3,7 @@ import {
   PLAYER_RADIUS, PLAYER_SPEED, PLAYER_FIRE, PLAYER_BULLET_SPEED,
   MAX_POWER, START_LIVES, MAX_LIVES, START_BOMBS, MAX_BOMBS,
   EXTRA_LIFE_EVERY, COMBO_TIMEOUT,
-  POWERUP_DROP, ENEMY_TYPES, DIFFICULTIES, BUFFS, BOSS_HP, BOSS_WAVES,
+  POWERUP_DROP, ENEMY_TYPES, ENEMY_PAL, DIFFICULTIES, BUFFS, BOSS_HP, BOSS_WAVES,
   HIGH_KEY, TOP5_KEY,
 } from './constants.js'
 import { ParticleSystem } from './particles.js'
@@ -79,7 +79,7 @@ function pointInRotatedRect(px, py, cx, cy, w, h, ang) {
 export class Engine {
   constructor() {
     this.input = { up: false, down: false, left: false, right: false, fire: false }
-    this.pointer = { active: false, x: 0, y: 0 }
+    this.pointer = { active: false, x: 0, y: 0, ox: 0, oy: 0, isTouch: false }
     this.phase = 'menu'
     this.difficulty = 'normal'
     this.onPhase = null
@@ -115,6 +115,8 @@ export class Engine {
     this.nextLifeAt = EXTRA_LIFE_EVERY
     this.shake = 0
     this.flash = 0
+    this.hurtFlash = 0
+    this.slowmo = 0
     this.bannerWave = 0
     this.bannerT = 0
     this.upgradeChoices = []
@@ -122,7 +124,7 @@ export class Engine {
     this.boss = null
     this.bossTimer = 0
     this.laser = null
-    this.player = { x: FIELD_W / 2, y: FIELD_H - 90, fireT: 0, invuln: 2, shieldFlash: 0, muzzle: 0 }
+    this.player = { x: FIELD_W / 2, y: FIELD_H - 90, fireT: 0, invuln: 2, shieldFlash: 0, muzzle: 0, tilt: 0 }
     this.bullets = []
     this.ebullets = []
     this.enemies = []
@@ -153,6 +155,28 @@ export class Engine {
   togglePause() {
     if (this.phase === 'playing') this.setPhase('paused')
     else if (this.phase === 'paused') this.setPhase('playing')
+  }
+
+  pointerDown(x, y, isTouch) {
+    this.pointer.isTouch = isTouch
+    this.pointer.ox = this.player.x - x
+    this.pointer.oy = this.player.y - y
+    this.pointer.x = x
+    this.pointer.y = y
+    this.pointer.active = true
+  }
+
+  pointerMove(x, y) {
+    this.pointer.x = x
+    this.pointer.y = y
+  }
+
+  pointerUp() {
+    this.pointer.active = false
+  }
+
+  vibrate(pattern) {
+    try { navigator.vibrate?.(pattern) } catch { /* noop */ }
   }
 
   setPhase(p) {
@@ -335,6 +359,7 @@ export class Engine {
       default: add(0, 0); add(-8, -0.1); add(8, 0.1); add(0, -0.22); add(0, 0.22); break
     }
     p.muzzle = 0.06
+    this.particles.flash(x, y - 22, '#fff7cc', 26, 0.14)
     audio.play('shoot', 0.08)
   }
 
@@ -373,6 +398,13 @@ export class Engine {
     return Math.min(5, 1 + Math.floor(this.streak / 5))
   }
 
+  burstVisuals(x, y, type) {
+    const pal = ENEMY_PAL[type] || ENEMY_PAL.grunt
+    this.particles.flash(x, y, pal.glow, 64, 0.28)
+    this.particles.shockwave(x, y, pal.glow, 84, 0.4)
+    this.particles.debris(x, y, [pal.glow, pal.body, '#ffd166', '#fff3b0'], 16, 210)
+  }
+
   killEnemy(e, byBomb) {
     const idx = this.enemies.indexOf(e)
     if (idx === -1) return
@@ -383,10 +415,25 @@ export class Engine {
       this.comboT = COMBO_TIMEOUT
     }
     const def = ENEMY_TYPES[e.type]
+    const gained = Math.round(def.score * this.scoreMul * this.mult())
     this.addScore(def.score)
     this.dropPowerup(e.x, e.y)
-    this.particles.explode(e.x, e.y, e.type === 'tank' ? 46 : 22)
-    this.shake = Math.max(this.shake, e.type === 'tank' ? 10 : 5)
+    const isTank = e.type === 'tank'
+    this.burstVisuals(e.x, e.y, e.type)
+    if (isTank) {
+      this.particles.flash(e.x, e.y, '#86efac', 110, 0.32)
+      this.particles.shockwave(e.x, e.y, '#86efac', 130, 0.5)
+      this.particles.debris(e.x, e.y, ['#4ade80', '#86efac', '#ffd166', '#fff3b0'], 24, 280)
+      this.particles.smoke(e.x, e.y, 8)
+    }
+    if (!byBomb) {
+      this.particles.text(e.x, e.y - 12, `+${gained}`, isTank ? '#86efac' : '#ffe08a', isTank ? 16 : 13)
+      if (this.streak > 0 && this.streak % 5 === 0) {
+        this.particles.text(this.player.x, this.player.y - 36, `连击 x${this.mult()}！`, '#fbbf24', 16)
+        audio.play('combo')
+      }
+    }
+    this.shake = Math.max(this.shake, isTank ? 11 : 6)
     audio.play('explode')
   }
 
@@ -396,6 +443,7 @@ export class Engine {
     b.hp -= dmg
     b.flash = 0.09
     this.shake = Math.max(this.shake, 3)
+    this.particles.spark(b.x + rand(-28, 28), b.y + rand(-20, 26), Math.PI / 2 + rand(-0.6, 0.6))
     audio.play('hit')
     if (b.hp <= 0) {
       this.boss = null
@@ -403,8 +451,17 @@ export class Engine {
       this.particles.explode(b.x, b.y, 120)
       this.particles.explode(b.x - 40, b.y, 60)
       this.particles.explode(b.x + 40, b.y, 60)
-      this.shake = 22
-      this.addScore(this.wave === 10 ? 20000 : 10000)
+      this.particles.flash(b.x, b.y, '#fda4af', 150, 0.4)
+      this.particles.shockwave(b.x, b.y, '#fda4af', 200, 0.6)
+      this.particles.shockwave(b.x, b.y, '#fb923c', 120, 0.75)
+      this.particles.debris(b.x, b.y, ['#f43f5e', '#fda4af', '#fb923c', '#fff3b0'], 40, 320)
+      this.particles.smoke(b.x, b.y, 12)
+      const base = this.wave === 10 ? 20000 : 10000
+      this.particles.text(b.x, b.y - 30, `+${Math.round(base * this.scoreMul * this.mult())}`, '#fda4af', 20)
+      this.shake = 24
+      this.slowmo = Math.max(this.slowmo, 0.5)
+      this.vibrate([60, 50, 120])
+      this.addScore(base)
       audio.play('big')
     }
   }
@@ -414,6 +471,10 @@ export class Engine {
     this.bombs -= 1
     this.flash = 0.55
     this.shake = 18
+    this.slowmo = Math.max(this.slowmo, 0.15)
+    this.particles.flash(this.player.x, this.player.y, '#ffffff', 170, 0.35)
+    this.particles.ring(this.player.x, this.player.y)
+    this.vibrate(40)
     for (let i = 0; i < this.ebullets.length; i++) this.score += Math.round(20 * this.scoreMul)
     this.ebullets.length = 0
     for (const e of [...this.enemies]) {
@@ -421,7 +482,6 @@ export class Engine {
       if (e.hp <= 0) this.killEnemy(e, true)
     }
     if (this.boss) this.damageBoss(40)
-    this.particles.ring(this.player.x, this.player.y)
     audio.play('bomb')
   }
 
@@ -433,15 +493,26 @@ export class Engine {
       p.invuln = 1.5
       p.shieldFlash = 0.35
       this.shake = 8
-      this.particles.explode(p.x, p.y, 14)
+      this.hurtFlash = Math.max(this.hurtFlash, 0.3)
+      this.particles.flash(p.x, p.y, '#7dd3fc', 70, 0.3)
+      this.particles.shockwave(p.x, p.y, '#7dd3fc', 100, 0.45)
+      this.particles.debris(p.x, p.y, ['#7dd3fc', '#38bdf8'], 10, 170)
+      this.vibrate(60)
       audio.play('shieldHit')
       return
     }
     this.lives -= 1
     p.invuln = 2.4
-    this.shake = 16
-    this.flash = Math.max(this.flash, 0.25)
+    this.shake = 18
+    this.flash = Math.max(this.flash, 0.3)
+    this.hurtFlash = 1
+    this.slowmo = Math.max(this.slowmo, 0.6)
     this.particles.explode(p.x, p.y, 50)
+    this.particles.flash(p.x, p.y, '#ff8c42', 140, 0.4)
+    this.particles.shockwave(p.x, p.y, '#fda4af', 170, 0.55)
+    this.particles.debris(p.x, p.y, ['#38bdf8', '#7dd3fc', '#fda4af', '#f472b6', '#fff3b0'], 26, 300)
+    this.particles.smoke(p.x, p.y, 10)
+    this.vibrate([90, 60, 160])
     this.power = Math.max(1, this.power - 1)
     audio.play('explode')
     if (this.lives <= 0) {
@@ -458,14 +529,10 @@ export class Engine {
   updatePlayer(dt) {
     const p = this.player
     const sp = PLAYER_SPEED * this.speedMul
+    const prevX = p.x
     if (this.pointer.active) {
-      const dx = this.pointer.x - p.x
-      const dy = this.pointer.y - p.y
-      const d = Math.hypot(dx, dy)
-      if (d > 4) {
-        p.x += (dx / d) * sp * dt
-        p.y += (dy / d) * sp * dt
-      }
+      p.x = this.pointer.x + this.pointer.ox
+      p.y = this.pointer.y + this.pointer.oy
     } else {
       let mx = 0
       let my = 0
@@ -481,6 +548,8 @@ export class Engine {
     }
     p.x = Math.max(20, Math.min(FIELD_W - 20, p.x))
     p.y = Math.max(24, Math.min(FIELD_H - 24, p.y))
+    const targetTilt = Math.max(-0.3, Math.min(0.3, (p.x - prevX) * 0.015))
+    p.tilt += (targetTilt - p.tilt) * Math.min(1, dt * 12)
     if (p.invuln > 0) p.invuln -= dt
     if (p.muzzle > 0) p.muzzle -= dt
     if (p.shieldFlash > 0) p.shieldFlash -= dt
@@ -530,7 +599,7 @@ export class Engine {
           hit = true
           e.hp -= b.dmg
           e.flash = 0.08
-          this.particles.spark(b.x, b.y)
+          this.particles.spark(b.x, b.y, Math.atan2(b.vy, b.vx))
           if (e.hp <= 0) this.killEnemy(e)
           break
         }
@@ -574,6 +643,7 @@ export class Engine {
             if (e.fireT <= 0) {
               e.fireT = def.fireRate / this.diff.fireMul
               const ang = Math.PI / 2
+              this.particles.flash(e.x, e.y, '#d8b4fe', 18, 0.18)
               this.fireEnemyBullet(e.x, e.y, ang - 0.3, 170)
               this.fireEnemyBullet(e.x, e.y, ang + 0.3, 170)
             }
@@ -606,6 +676,7 @@ export class Engine {
               e.volleys += 1
               e.charge = def.fireRate / this.diff.fireMul
               const ang = Math.atan2(this.player.y - e.y, this.player.x - e.x)
+              this.particles.flash(e.x, e.y, '#7dd3fc', 22, 0.2)
               for (let k = -2; k <= 2; k++) {
                 this.fireEnemyBullet(e.x, e.y, ang + k * 0.16, 250)
               }
@@ -623,6 +694,7 @@ export class Engine {
             if (e.fireT <= 0) {
               e.fireT = def.fireRate / this.diff.fireMul
               const ang = Math.PI / 2
+              this.particles.flash(e.x, e.y, '#86efac', 24, 0.2)
               this.fireEnemyBullet(e.x, e.y, ang - 0.35, 185)
               this.fireEnemyBullet(e.x, e.y, ang, 185)
               this.fireEnemyBullet(e.x, e.y, ang + 0.35, 185)
@@ -640,7 +712,7 @@ export class Engine {
       }
       if (this.phase === 'playing' && circ(e, this.player, def.r, PLAYER_RADIUS)) {
         this.enemies.splice(i, 1)
-        this.particles.explode(e.x, e.y, 26)
+        this.burstVisuals(e.x, e.y, e.type)
         this.addScore(def.score)
         this.hitPlayer()
       }
@@ -783,24 +855,35 @@ export class Engine {
   collect(g) {
     const p = this.player
     switch (g.kind) {
-      case 'gem':
-        this.score += Math.round(120 * this.scoreMul)
+      case 'gem': {
+        const gained = Math.round(120 * this.scoreMul)
+        this.score += gained
+        this.particles.text(p.x, p.y - 30, `+${gained}`, '#34d399', 12)
         break
+      }
       case 'power':
         this.power = Math.min(MAX_POWER, this.power + 1)
+        this.particles.text(p.x, p.y - 30, '火力 +1', '#f87171', 13)
         audio.play('powerup')
         break
       case 'shield':
         this.shield = Math.min(3, this.shield + 1)
+        this.particles.text(p.x, p.y - 30, '护盾 +1', '#60a5fa', 13)
         audio.play('shield')
         break
       case 'bomb':
         this.bombs = Math.min(MAX_BOMBS, this.bombs + 1)
+        this.particles.text(p.x, p.y - 30, '炸弹 +1', '#fb923c', 13)
         audio.play('powerup')
         break
       case 'life':
-        if (this.lives < MAX_LIVES) this.lives += 1
-        else this.score += 2000
+        if (this.lives < MAX_LIVES) {
+          this.lives += 1
+          this.particles.text(p.x, p.y - 30, '生命 +1', '#f472b6', 14)
+        } else {
+          this.score += 2000
+          this.particles.text(p.x, p.y - 30, '+2000', '#f472b6', 13)
+        }
         audio.play('life')
         break
       default:
@@ -875,10 +958,16 @@ export class Engine {
 
   frame(t) {
     const now = t / 1000
-    const dt = Math.min(0.05, Math.max(0.001, now - (this.lastT || now)))
+    const raw = Math.min(0.05, Math.max(0.001, now - (this.lastT || now)))
     this.lastT = now
+    let dt = raw
+    if (this.slowmo > 0) {
+      this.slowmo -= raw
+      dt = raw * 0.45
+    }
     if (this.shake > 0) this.shake = Math.max(0, this.shake - 34 * dt)
     if (this.flash > 0) this.flash = Math.max(0, this.flash - 1.4 * dt)
+    if (this.hurtFlash > 0) this.hurtFlash = Math.max(0, this.hurtFlash - 1.5 * dt)
     if (this.bannerT > 0) this.bannerT -= dt
     this.particles.update(dt)
 
@@ -922,6 +1011,7 @@ export class Engine {
       wave: this.wave,
       mult: this.mult(),
       streak: this.streak,
+      comboFrac: this.comboT / COMBO_TIMEOUT,
       timeSec: this.timeSec,
       kills: this.kills,
       phase: this.phase,

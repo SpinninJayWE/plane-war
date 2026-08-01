@@ -33,6 +33,15 @@ export const ENEMY_TYPES = {
   tank: { hp: 10, speed: 62, score: 800, r: 21, fire: 3, fireRate: 1.7 },
 }
 
+export const ENEMY_PAL = {
+  grunt: { body: '#e5484d', dark: '#7f1d1d', glow: '#ff8080' },
+  weaver: { body: '#a78bfa', dark: '#5b21b6', glow: '#d8b4fe' },
+  mini: { body: '#fb923c', dark: '#9a3412', glow: '#fdba74' },
+  diver: { body: '#fbbf24', dark: '#92400e', glow: '#fde68a' },
+  sniper: { body: '#38bdf8', dark: '#075985', glow: '#7dd3fc' },
+  tank: { body: '#4ade80', dark: '#14532d', glow: '#86efac' },
+}
+
 export const DIFFICULTIES = {
   easy: {
     label: '简单',

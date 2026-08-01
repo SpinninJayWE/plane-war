@@ -23,6 +23,8 @@ export default function App() {
   const fsGuardUntilRef = useRef(0)
   const touchIdRef = useRef(null)
   const isTouchRef = useRef(false)
+  const hintShownRef = useRef(false)
+  const hintTimerRef = useRef(null)
 
   const [phase, setPhase] = useState('menu')
   const [hud, setHud] = useState(null)
@@ -30,6 +32,7 @@ export default function App() {
   const [bgmOn, setBgmOn] = useState(true)
   const [isFull, setIsFull] = useState(false)
   const [isTouch, setIsTouch] = useState(false)
+  const [touchHint, setTouchHint] = useState(false)
 
   useEffect(() => {
     phaseRef.current = phase
@@ -80,6 +83,7 @@ export default function App() {
         snap.bannerWave, snap.bannerT > 0, snap.boss?.hp ?? -1,
         snap.upgradeChoices.map((c) => c.id).join('+'),
         snap.endless, snap.kills, Math.floor(snap.timeSec),
+        Math.round(snap.comboFrac * 4),
       ].join('|')
       if (key !== lastKey) {
         lastKey = key
@@ -142,25 +146,28 @@ export default function App() {
       if (e.pointerType === 'touch') {
         isTouchRef.current = true
         setIsTouch(true)
+        if (!hintShownRef.current) {
+          hintShownRef.current = true
+          setTouchHint(true)
+          hintTimerRef.current = setTimeout(() => setTouchHint(false), 2600)
+        }
       }
-      if (phaseRef.current !== 'playing' && phaseRef.current !== 'menu') return
+      if (engine.phase !== 'playing') return
       if (e.target.closest && e.target.closest('button')) return
       touchIdRef.current = e.pointerId
+      try { stage.setPointerCapture(e.pointerId) } catch { /* noop */ }
       const p = toField(e.clientX, e.clientY)
-      engine.pointer.active = true
-      engine.pointer.x = p.x
-      engine.pointer.y = p.y
+      engine.pointerDown(p.x, p.y, e.pointerType === 'touch')
     }
     const onPointerMove = (e) => {
       if (e.pointerId !== touchIdRef.current) return
       const p = toField(e.clientX, e.clientY)
-      engine.pointer.x = p.x
-      engine.pointer.y = p.y
+      engine.pointerMove(p.x, p.y)
     }
     const onPointerUp = (e) => {
       if (e.pointerId !== touchIdRef.current) return
       touchIdRef.current = null
-      engine.pointer.active = false
+      engine.pointerUp()
     }
 
     const onFullChange = () => setIsFull(Boolean(document.fullscreenElement))
@@ -183,10 +190,12 @@ export default function App() {
     stage.addEventListener('pointermove', onPointerMove)
     stage.addEventListener('pointerup', onPointerUp)
     stage.addEventListener('pointercancel', onPointerUp)
+    stage.addEventListener('lostpointercapture', onPointerUp)
 
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
+      clearTimeout(hintTimerRef.current)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('fullscreenchange', onFullChange)
@@ -196,6 +205,7 @@ export default function App() {
       stage.removeEventListener('pointermove', onPointerMove)
       stage.removeEventListener('pointerup', onPointerUp)
       stage.removeEventListener('pointercancel', onPointerUp)
+      stage.removeEventListener('lostpointercapture', onPointerUp)
     }
   }, [])
 
@@ -267,6 +277,9 @@ export default function App() {
             />
           )}
           {showBanner && <WaveBanner wave={hud.bannerWave} isBoss={bannerIsBoss} />}
+          {isTouch && touchHint && phase === 'playing' && (
+            <div className="touch-hint">拖动手指控制战机 · 自动开火</div>
+          )}
           {phase === 'menu' && (
             <MenuScreen
               diff={diff}

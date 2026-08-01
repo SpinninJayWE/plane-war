@@ -145,6 +145,9 @@ export const audio = {
       case 'enemyShoot':
         osc('triangle', 300, 0.1, 0.14, 180)
         break
+      case 'combo':
+        blip([784, 1047, 1319], 0.08, 0.22, 'triangle', 0.06)
+        break
       case 'gameover':
         blip([523, 440, 349, 262, 196], 0.24, 0.28, 'triangle', 0.16)
         break

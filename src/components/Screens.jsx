@@ -60,10 +60,10 @@ export function MenuScreen({ diff, setDiff, high, top5, bgmOn, isFull, onBgm, on
           </p>
         )}
         <div className="help">
-          <div><kbd>WASD</kbd> / <kbd>方向键</kbd> 移动 · 手机可直接拖拽</div>
-          <div><kbd>J</kbd> / <kbd>空格</kbd> 射击（长按连发）</div>
+          <div><kbd>WASD</kbd> / <kbd>方向键</kbd> 移动 · 触屏：拖动即控制战机</div>
+          <div><kbd>J</kbd> / <kbd>空格</kbd> 射击（长按连发 · 触屏自动开火）</div>
           <div><kbd>B</kbd> 炸弹清屏 · <kbd>P</kbd>/<kbd>Esc</kbd> 暂停</div>
-          <div><kbd>M</kbd> 音乐 · <kbd>F</kbd> 全屏</div>
+          <div><kbd>M</kbd> 音乐 · <kbd>F</kbd> 全屏 · 连续击破可提升连击倍率</div>
         </div>
       </div>
     </div>

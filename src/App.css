@@ -29,6 +29,15 @@
   touch-action: none;
 }
 
+.stage-center::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, transparent 58%, rgba(2, 6, 23, 0.5) 100%);
+}
+
 .game-canvas {
   position: absolute;
   inset: 0;
@@ -72,6 +81,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+.hud-pill .num.pop {
+  display: inline-block;
+  animation: score-pop 0.25s ease;
+}
+
+@keyframes score-pop {
+  0% {
+    transform: scale(1.4);
+    color: #fff;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 .hud-pill .lbl {
   color: #94a3b8;
   font-size: 11px;
@@ -80,6 +104,26 @@
 .mult {
   color: #fbbf24;
   font-weight: 800;
+}
+
+.combo-bar {
+  position: relative;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(251, 191, 36, 0.25);
+  overflow: hidden;
+}
+
+.combo-bar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 2px;
+  background: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.8);
+  transition: width 0.25s linear;
 }
 
 .icons {
@@ -131,29 +175,87 @@
 
 .hud-btn-row {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   display: flex;
-  gap: 8px;
+  gap: 10px;
   z-index: 5;
   pointer-events: auto;
 }
 
 .touch-btn {
-  width: 54px;
-  height: 54px;
+  position: relative;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(2, 6, 23, 0.55);
+  background: rgba(2, 6, 23, 0.6);
   color: #f1f5f9;
   font-weight: 700;
   font-size: 13px;
   backdrop-filter: blur(4px);
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .touch-btn:active {
   background: rgba(56, 189, 248, 0.4);
+  transform: scale(0.92);
+}
+
+.touch-btn:disabled {
+  opacity: 0.4;
+}
+
+.touch-btn .badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 20px;
+  height: 20px;
+  line-height: 20px;
+  border-radius: 10px;
+  background: #fb923c;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.touch-hint {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9;
+  pointer-events: none;
+  white-space: nowrap;
+  background: rgba(2, 6, 23, 0.72);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #bae6fd;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  animation: hint-in 0.3s ease, hint-out 0.4s ease 2.2s forwards;
+}
+
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes hint-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
 }
 
 .overlay {
@@ -222,6 +324,7 @@
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
   transition: transform 0.06s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
@@ -352,6 +455,35 @@
     0 0 46px rgba(56, 189, 248, 0.5);
 }
 
+.banner::before {
+  content: '';
+  position: absolute;
+  top: 54%;
+  width: 70px;
+  height: 2px;
+  border-radius: 2px;
+  background: #38bdf8;
+  box-shadow: 0 0 14px #38bdf8, 0 0 32px rgba(56, 189, 248, 0.6);
+  animation: banner-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes banner-sweep {
+  0% {
+    left: 10%;
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    left: 90%;
+    opacity: 0;
+  }
+}
+
 .banner p {
   margin: 8px 0 0;
   color: #fda4af;
@@ -402,6 +534,10 @@
 .upgrade-card:hover {
   transform: translateY(-3px);
   border-color: #fbbf24;
+}
+
+.upgrade-card:active {
+  transform: scale(0.96);
 }
 
 .upgrade-card .key {

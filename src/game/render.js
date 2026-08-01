@@ -1,13 +1,4 @@
-import { FIELD_W, FIELD_H } from './constants.js'
-
-const PAL = {
-  grunt: { body: '#e5484d', dark: '#7f1d1d', glow: '#ff8080' },
-  weaver: { body: '#a78bfa', dark: '#5b21b6', glow: '#d8b4fe' },
-  mini: { body: '#fb923c', dark: '#9a3412', glow: '#fdba74' },
-  diver: { body: '#fbbf24', dark: '#92400e', glow: '#fde68a' },
-  sniper: { body: '#38bdf8', dark: '#075985', glow: '#7dd3fc' },
-  tank: { body: '#4ade80', dark: '#14532d', glow: '#86efac' },
-}
+import { FIELD_W, FIELD_H, ENEMY_TYPES, ENEMY_PAL } from './constants.js'
 
 const PUP_PAL = {
   gem: { body: '#34d399', glow: '#a7f3d0' },
@@ -46,6 +37,7 @@ export class Renderer {
     }
 
     this.drawBackground(ctx)
+    this.drawVignette(ctx)
     this.drawPowerups(ctx)
     this.drawEnemyBullets(ctx)
     this.drawBullets(ctx)
@@ -54,12 +46,47 @@ export class Renderer {
     if (e.phase === 'playing' || e.phase === 'paused') this.drawPlayer(ctx)
     this.drawParticles(ctx)
     if (e.boss) this.drawBossBar(ctx)
+    this.drawTouchIndicator(ctx)
 
+    if (e.hurtFlash > 0) {
+      const a = Math.min(0.5, e.hurtFlash * 0.55)
+      const g = ctx.createRadialGradient(FIELD_W / 2, FIELD_H / 2, FIELD_H * 0.25, FIELD_W / 2, FIELD_H / 2, FIELD_H * 0.75)
+      g.addColorStop(0, 'rgba(220,38,38,0)')
+      g.addColorStop(1, `rgba(220,38,38,${a})`)
+      ctx.fillStyle = g
+      ctx.fillRect(-20, -20, FIELD_W + 40, FIELD_H + 40)
+    }
     if (e.flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${Math.min(0.9, e.flash)})`
       ctx.fillRect(-20, -20, FIELD_W + 40, FIELD_H + 40)
     }
     ctx.restore()
+  }
+
+  drawVignette(ctx) {
+    const g = ctx.createRadialGradient(FIELD_W / 2, FIELD_H / 2, FIELD_H * 0.42, FIELD_W / 2, FIELD_H / 2, FIELD_H * 0.82)
+    g.addColorStop(0, 'rgba(2,6,23,0)')
+    g.addColorStop(1, 'rgba(2,6,23,0.45)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, FIELD_W, FIELD_H)
+  }
+
+  drawTouchIndicator(ctx) {
+    const e = this.engine
+    if (!e.pointer.active || !e.pointer.isTouch) return
+    const x = e.pointer.x
+    const y = e.pointer.y
+    ctx.strokeStyle = 'rgba(125,211,252,0.55)'
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([5, 5])
+    ctx.beginPath()
+    ctx.arc(x, y, 17 + Math.sin(this.t * 8) * 2, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.fillStyle = 'rgba(125,211,252,0.4)'
+    ctx.beginPath()
+    ctx.arc(x, y, 3, 0, Math.PI * 2)
+    ctx.fill()
   }
 
   drawBackground(ctx) {
@@ -90,8 +117,17 @@ export class Renderer {
     if (p.invuln > 0 && Math.floor(this.t * 14) % 2 === 0) ctx.globalAlpha = 0.45
     ctx.save()
     ctx.translate(p.x, p.y)
+    if (p.tilt) ctx.rotate(p.tilt)
 
-    const flame = 10 + Math.sin(this.t * 40) * 4
+    const gl = ctx.createRadialGradient(0, 0, 4, 0, 0, 27)
+    gl.addColorStop(0, 'rgba(56,189,248,0.22)')
+    gl.addColorStop(1, 'rgba(56,189,248,0)')
+    ctx.fillStyle = gl
+    ctx.beginPath()
+    ctx.arc(0, 0, 27, 0, Math.PI * 2)
+    ctx.fill()
+
+    const flame = 10 + Math.sin(this.t * 40) * 4 + Math.abs(p.tilt || 0) * 20
     ctx.fillStyle = 'rgba(255,170,60,0.9)'
     ctx.beginPath()
     ctx.moveTo(-4, 14)
@@ -125,10 +161,21 @@ export class Renderer {
     ctx.fill()
 
     if (p.muzzle > 0) {
+      const m = Math.min(1, p.muzzle / 0.06)
+      ctx.globalAlpha = m
       ctx.fillStyle = '#fff7cc'
       ctx.beginPath()
-      ctx.arc(0, -24, 3.5, 0, Math.PI * 2)
+      ctx.arc(0, -24, 4.5, 0, Math.PI * 2)
       ctx.fill()
+      ctx.strokeStyle = '#fffbe6'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(0, -32)
+      ctx.lineTo(0, -16)
+      ctx.moveTo(-7, -24)
+      ctx.lineTo(7, -24)
+      ctx.stroke()
+      ctx.globalAlpha = 1
     }
 
     if (p.shield > 0) {
@@ -179,7 +226,8 @@ export class Renderer {
   drawEnemies(ctx) {
     const e = this.engine
     for (const en of e.enemies) {
-      const pal = PAL[en.type]
+      const pal = ENEMY_PAL[en.type]
+      const def = ENEMY_TYPES[en.type]
       ctx.save()
       ctx.translate(en.x, en.y)
       ctx.globalAlpha = en.y < 8 ? 0.3 + (en.y / 8) * 0.7 : 1
@@ -206,11 +254,12 @@ export class Renderer {
           break
       }
       if (en.flash > 0) {
-        ctx.globalAlpha = 0.7
+        ctx.globalAlpha = Math.min(1, en.flash * 10) * 0.75
         ctx.fillStyle = '#ffffff'
         ctx.beginPath()
-        ctx.arc(0, 0, 14, 0, Math.PI * 2)
+        ctx.arc(0, 0, def.r + 2, 0, Math.PI * 2)
         ctx.fill()
+        ctx.globalAlpha = 1
       }
       ctx.restore()
       ctx.globalAlpha = 1
@@ -431,7 +480,7 @@ export class Renderer {
     const b = e.boss
     const w = 320
     const x = (FIELD_W - w) / 2
-    const y = 14
+    const y = 22
     ctx.fillStyle = 'rgba(2,6,23,0.72)'
     ctx.fillRect(x - 4, y - 4, w + 8, 16)
     ctx.fillStyle = '#0f172a'
@@ -442,6 +491,17 @@ export class Renderer {
     hg.addColorStop(1, '#fb923c')
     ctx.fillStyle = hg
     ctx.fillRect(x, y, w * frac, 8)
+    ctx.fillStyle = '#fda4af'
+    ctx.font = 'bold 10px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText(b.name, FIELD_W / 2, y - 8)
+    if (frac < 0.25) {
+      const a = 0.35 + Math.sin(this.t * 14) * 0.35
+      ctx.strokeStyle = `rgba(244,63,94,${a})`
+      ctx.lineWidth = 2
+      ctx.strokeRect(x - 4, y - 4, w + 8, 16)
+    }
   }
 
   drawPowerups(ctx) {
@@ -489,12 +549,36 @@ export class Renderer {
       if (p.type === 'ring') {
         ctx.globalAlpha = a * 0.8
         ctx.strokeStyle = p.color
-        ctx.lineWidth = 3 * a + 0.5
+        ctx.lineWidth = Math.max(0.5, 3 * a)
         ctx.beginPath()
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
         ctx.stroke()
-      } else {
+      } else if (p.type === 'flash') {
+        ctx.globalAlpha = a * 0.85
+        ctx.fillStyle = p.color
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+        ctx.fill()
+      } else if (p.type === 'streak') {
         ctx.globalAlpha = a
+        ctx.strokeStyle = p.color
+        ctx.lineWidth = Math.max(1, p.size * 0.22)
+        ctx.beginPath()
+        ctx.moveTo(p.x, p.y)
+        ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03)
+        ctx.stroke()
+      } else if (p.type === 'text') {
+        ctx.globalAlpha = Math.min(1, a * 1.6)
+        ctx.font = `bold ${p.size}px system-ui, sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.strokeStyle = 'rgba(2,6,23,0.85)'
+        ctx.lineWidth = 3
+        ctx.strokeText(p.str, p.x, p.y)
+        ctx.fillStyle = p.color
+        ctx.fillText(p.str, p.x, p.y)
+      } else {
+        ctx.globalAlpha = a * (p.opacity ?? 1)
         ctx.fillStyle = p.color
         ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
       }

@@ -10,12 +10,13 @@ export function Hud({ hud, isTouch, onBomb, onPause, onBgm, onFull, bgmOn, isFul
       <div className="hud">
         <div className="hud-pill">
           <span className="lbl">分数</span>
-          <span className="num">{hud.score.toLocaleString()}</span>
+          <span key={hud.score} className="num pop">{hud.score.toLocaleString()}</span>
         </div>
         {hud.mult > 1 && (
           <div className="hud-pill mult">
             <span className="lbl">连击</span>
             <span className="num">x{hud.mult}</span>
+            <span className="combo-bar"><i style={{ width: `${Math.round(hud.comboFrac * 100)}%` }} /></span>
           </div>
         )}
         <div className="grow" />
@@ -57,7 +58,10 @@ export function Hud({ hud, isTouch, onBomb, onPause, onBgm, onFull, bgmOn, isFul
       {isTouch && (
         <div className="hud-btn-row">
           <button className="touch-btn" onClick={onPause}>暂停</button>
-          <button className="touch-btn" onClick={onBomb}>炸弹</button>
+          <button className="touch-btn" onClick={onBomb} disabled={hud.bombs <= 0}>
+            炸弹
+            <span className="badge">{hud.bombs}</span>
+          </button>
         </div>
       )}
     </>
