@@ -13,7 +13,25 @@ async function poll(page, fn, timeout = 90000, msg = 'poll timeout') {
   throw new Error(msg)
 }
 
+// 无头环境偶发失焦会触发游戏自动暂停，轮询期间若发现暂停则自动恢复
+async function pollPlaying(page, fn, timeout = 90000, msg = 'poll timeout') {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    const p = await ph(page)
+    if (p === 'paused') {
+      await page.evaluate(() => window.__engine.setPhase('playing'))
+      await page.waitForTimeout(100)
+      continue
+    }
+    const v = await fn()
+    if (v) return v
+    await page.waitForTimeout(250)
+  }
+  throw new Error(msg)
+}
+
 async function startGame(page) {
+  await page.bringToFront()
   await page.click('button:has-text("开始游戏")')
   await expect(page.locator('.hud')).toBeVisible()
   await poll(page, async () => (await ph(page)) === 'playing')
@@ -43,7 +61,7 @@ test.describe('星际猎手 E2E', () => {
     await startGame(page)
     await page.keyboard.down('Space')
     await page.keyboard.down('ArrowRight')
-    await poll(page, () => eng(page).then((e) => e.score > 0), 45000, '10 秒内未击杀得分')
+    await pollPlaying(page, () => eng(page).then((e) => e.score > 0), 45000, '10 秒内未击杀得分')
     const e = await eng(page)
     expect(e.kills).toBeGreaterThanOrEqual(1)
     await page.keyboard.up('ArrowRight')
@@ -82,7 +100,7 @@ test.describe('星际猎手 E2E', () => {
     await page.goto('/')
     await startGame(page)
     await page.keyboard.down('Space')
-    await poll(page, async () => (await ph(page)) === 'upgrade', 90000, '第 2 波结束未出现升级界面')
+    await pollPlaying(page, async () => (await ph(page)) === 'upgrade', 90000, '第 2 波结束未出现升级界面')
     await expect(page.locator('.upgrade-card')).toHaveCount(3)
     await page.screenshot({ path: 'test-results/shots/05-upgrade.png' })
     await page.locator('.upgrade-card').first().click()
