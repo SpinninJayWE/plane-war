@@ -1,25 +1,49 @@
 import { FIELD_W, FIELD_H, ENEMY_TYPES, ENEMY_PAL } from './constants.js'
+import { buildSprites } from './sprites.js'
 
-const PUP_PAL = {
-  gem: { body: '#34d399', glow: '#a7f3d0' },
-  power: { body: '#f87171', glow: '#fecaca' },
-  shield: { body: '#60a5fa', glow: '#bfdbfe' },
-  bomb: { body: '#fb923c', glow: '#fed7aa' },
-  life: { body: '#f472b6', glow: '#fbcfe8' },
+const SPRITE_SIZE = {
+  player: [36, 44],
+  grunt: [30, 30],
+  weaver: [34, 32],
+  mini: [22, 24],
+  diver: [26, 34],
+  sniper: [40, 34],
+  tank: [50, 44],
+  bullet: [16, 16],
+  ebullet: [16, 16],
+  boss1: [96, 92],
+  boss2: [96, 92],
+  boss3: [96, 92],
+  pupPower: [30, 30],
+  pupShield: [30, 30],
+  pupBomb: [30, 30],
+  pupLife: [30, 30],
+  pupGem: [30, 30],
 }
+
+const NEBULA = [
+  { x: 90, y: 170, r: 230, c: '99,102,241', s: 0.02, p: 0 },
+  { x: 390, y: 420, r: 200, c: '168,85,247', s: 0.025, p: 1.3 },
+  { x: 230, y: 560, r: 250, c: '34,211,238', s: 0.018, p: 2.6 },
+]
 
 export class Renderer {
   constructor(engine) {
     this.engine = engine
+    this.sprites = buildSprites()
     this.stars = []
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 110; i++) {
       this.stars.push({
         x: Math.random() * FIELD_W,
         y: Math.random() * FIELD_H,
         s: Math.random() * 1.6 + 0.4,
-        layer: Math.random() < 0.5 ? 1 : Math.random() < 0.5 ? 2 : 3,
+        layer: Math.random() < 0.45 ? 1 : Math.random() < 0.5 ? 2 : 3,
+        tw: Math.random() * Math.PI * 2,
+        tws: 2 + Math.random() * 4,
       })
     }
+    this.meteor = null
+    this.meteorT = 4
     this.t = 0
   }
 
@@ -33,7 +57,9 @@ export class Renderer {
     ctx.translate(e.ox, e.oy)
 
     if (e.shake > 0) {
-      ctx.translate((Math.random() - 0.5) * e.shake, (Math.random() - 0.5) * e.shake)
+      const dx = (Math.random() - 0.5) * e.shake + e.shakeDx * e.shake * 0.35
+      const dy = (Math.random() - 0.5) * e.shake + e.shakeDy * e.shake * 0.35
+      ctx.translate(dx, dy)
     }
 
     this.drawBackground(ctx)
@@ -48,6 +74,14 @@ export class Renderer {
     if (e.boss) this.drawBossBar(ctx)
     this.drawTouchIndicator(ctx)
 
+    if (e.phase === 'playing' && e.lives <= 1) {
+      const a = 0.1 + Math.sin(this.t * 5) * 0.07
+      const g = ctx.createRadialGradient(FIELD_W / 2, FIELD_H / 2, FIELD_H * 0.32, FIELD_W / 2, FIELD_H / 2, FIELD_H * 0.75)
+      g.addColorStop(0, 'rgba(220,38,38,0)')
+      g.addColorStop(1, `rgba(220,38,38,${Math.max(0, a)})`)
+      ctx.fillStyle = g
+      ctx.fillRect(-20, -20, FIELD_W + 40, FIELD_H + 40)
+    }
     if (e.hurtFlash > 0) {
       const a = Math.min(0.5, e.hurtFlash * 0.55)
       const g = ctx.createRadialGradient(FIELD_W / 2, FIELD_H / 2, FIELD_H * 0.25, FIELD_W / 2, FIELD_H / 2, FIELD_H * 0.75)
@@ -61,6 +95,80 @@ export class Renderer {
       ctx.fillRect(-20, -20, FIELD_W + 40, FIELD_H + 40)
     }
     ctx.restore()
+  }
+
+  img(ctx, key, x, y, rot = 0, scale = 1) {
+    const [w, h] = SPRITE_SIZE[key]
+    const sw = w * scale
+    const sh = h * scale
+    ctx.save()
+    ctx.translate(x, y)
+    if (rot) ctx.rotate(rot)
+    ctx.drawImage(this.sprites[key], -sw / 2, -sh / 2, sw, sh)
+    ctx.restore()
+  }
+
+  drawBackground(ctx) {
+    const g = ctx.createLinearGradient(0, 0, 0, FIELD_H)
+    g.addColorStop(0, '#04070f')
+    g.addColorStop(0.5, '#0a1024')
+    g.addColorStop(1, '#140b26')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, FIELD_W, FIELD_H)
+
+    for (const nb of NEBULA) {
+      const cx = nb.x + Math.sin(this.t * nb.s * 6 + nb.p) * 14
+      const cy = nb.y + Math.cos(this.t * nb.s * 5 + nb.p) * 10
+      const a = 0.05 + Math.sin(this.t * nb.s + nb.p) * 0.012
+      const ng = ctx.createRadialGradient(cx, cy, 10, cx, cy, nb.r)
+      ng.addColorStop(0, `rgba(${nb.c},${Math.max(0.015, a)})`)
+      ng.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = ng
+      ctx.fillRect(cx - nb.r, cy - nb.r, nb.r * 2, nb.r * 2)
+    }
+
+    const speedMul = { 1: 24, 2: 58, 3: 105 }
+    for (const st of this.stars) {
+      st.y += speedMul[st.layer] * 0.016
+      if (st.y > FIELD_H) {
+        st.y = -2
+        st.x = Math.random() * FIELD_W
+      }
+      const tw = 0.65 + Math.sin(this.t * st.tws + st.tw) * 0.35
+      ctx.globalAlpha = (0.2 + st.layer * 0.2) * tw
+      ctx.fillStyle = st.layer === 3 ? '#e2e8f0' : st.layer === 2 ? '#93c5fd' : '#475569'
+      ctx.fillRect(st.x, st.y, st.s, st.s)
+    }
+    ctx.globalAlpha = 1
+
+    this.meteorT -= 0.016
+    if (this.meteorT <= 0) {
+      this.meteorT = 4 + Math.random() * 5
+      this.meteor = {
+        x: Math.random() * FIELD_W * 0.8,
+        y: -10 - Math.random() * 60,
+        vx: 260 + Math.random() * 180,
+        vy: 120 + Math.random() * 90,
+        t: 0,
+      }
+    }
+    if (this.meteor) {
+      const m = this.meteor
+      m.t += 0.016
+      m.x += m.vx * 0.016
+      m.y += m.vy * 0.016
+      const a = Math.max(0, 1 - m.t / 1.3) * 0.7
+      const lg = ctx.createLinearGradient(m.x, m.y, m.x - m.vx * 0.22, m.y - m.vy * 0.22)
+      lg.addColorStop(0, `rgba(255,255,255,${a})`)
+      lg.addColorStop(1, 'rgba(125,211,252,0)')
+      ctx.strokeStyle = lg
+      ctx.lineWidth = 1.6
+      ctx.beginPath()
+      ctx.moveTo(m.x, m.y)
+      ctx.lineTo(m.x - m.vx * 0.22, m.y - m.vy * 0.22)
+      ctx.stroke()
+      if (m.t >= 1.3 || m.x > FIELD_W + 40 || m.y > FIELD_H + 40) this.meteor = null
+    }
   }
 
   drawVignette(ctx) {
@@ -89,28 +197,6 @@ export class Renderer {
     ctx.fill()
   }
 
-  drawBackground(ctx) {
-    const g = ctx.createLinearGradient(0, 0, 0, FIELD_H)
-    g.addColorStop(0, '#050816')
-    g.addColorStop(0.55, '#0a1024')
-    g.addColorStop(1, '#140b26')
-    ctx.fillStyle = g
-    ctx.fillRect(0, 0, FIELD_W, FIELD_H)
-
-    const speedMul = { 1: 26, 2: 60, 3: 110 }
-    for (const st of this.stars) {
-      st.y += speedMul[st.layer] * 0.016
-      if (st.y > FIELD_H) {
-        st.y = -2
-        st.x = Math.random() * FIELD_W
-      }
-      ctx.globalAlpha = 0.25 + st.layer * 0.22
-      ctx.fillStyle = st.layer === 3 ? '#e2e8f0' : st.layer === 2 ? '#93c5fd' : '#475569'
-      ctx.fillRect(st.x, st.y, st.s, st.s)
-    }
-    ctx.globalAlpha = 1
-  }
-
   drawPlayer(ctx) {
     const e = this.engine
     const p = e.player
@@ -119,46 +205,30 @@ export class Renderer {
     ctx.translate(p.x, p.y)
     if (p.tilt) ctx.rotate(p.tilt)
 
-    const gl = ctx.createRadialGradient(0, 0, 4, 0, 0, 27)
-    gl.addColorStop(0, 'rgba(56,189,248,0.22)')
-    gl.addColorStop(1, 'rgba(56,189,248,0)')
-    ctx.fillStyle = gl
+    const L = 12 + Math.sin(this.t * 40) * 4 + Math.abs(p.tilt || 0) * 18
+    ctx.fillStyle = 'rgba(255,120,40,0.85)'
     ctx.beginPath()
-    ctx.arc(0, 0, 27, 0, Math.PI * 2)
+    ctx.moveTo(-5, 17)
+    ctx.lineTo(0, 17 + L)
+    ctx.lineTo(5, 17)
+    ctx.closePath()
     ctx.fill()
-
-    const flame = 10 + Math.sin(this.t * 40) * 4 + Math.abs(p.tilt || 0) * 20
-    ctx.fillStyle = 'rgba(255,170,60,0.9)'
+    ctx.fillStyle = 'rgba(255,210,120,0.95)'
     ctx.beginPath()
-    ctx.moveTo(-4, 14)
-    ctx.lineTo(0, 14 + flame)
-    ctx.lineTo(4, 14)
+    ctx.moveTo(-2.6, 17)
+    ctx.lineTo(0, 17 + L * 0.62)
+    ctx.lineTo(2.6, 17)
+    ctx.closePath()
+    ctx.fill()
+    ctx.fillStyle = '#fffbe6'
+    ctx.beginPath()
+    ctx.moveTo(-1.1, 17)
+    ctx.lineTo(0, 17 + L * 0.3)
+    ctx.lineTo(1.1, 17)
     ctx.closePath()
     ctx.fill()
 
-    const g = ctx.createLinearGradient(0, -22, 0, 14)
-    g.addColorStop(0, '#e0f2fe')
-    g.addColorStop(0.5, '#38bdf8')
-    g.addColorStop(1, '#1d4ed8')
-    ctx.fillStyle = g
-    ctx.beginPath()
-    ctx.moveTo(0, -22)
-    ctx.lineTo(-14, 8)
-    ctx.lineTo(-6, 8)
-    ctx.lineTo(-6, 14)
-    ctx.lineTo(6, 14)
-    ctx.lineTo(6, 8)
-    ctx.lineTo(14, 8)
-    ctx.closePath()
-    ctx.fill()
-    ctx.fillStyle = '#0ea5e9'
-    ctx.beginPath()
-    ctx.arc(0, -2, 4.5, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#bae6fd'
-    ctx.beginPath()
-    ctx.arc(0, -3, 2, 0, Math.PI * 2)
-    ctx.fill()
+    this.img(ctx, 'player', 0, 0)
 
     if (p.muzzle > 0) {
       const m = Math.min(1, p.muzzle / 0.06)
@@ -179,16 +249,26 @@ export class Renderer {
     }
 
     if (p.shield > 0) {
+      const rot = this.t * 1.6
       ctx.strokeStyle = p.shieldFlash > 0 ? '#ffffff' : '#38bdf8'
       ctx.globalAlpha = 0.5 + (p.shieldFlash > 0 ? 0.5 : Math.sin(this.t * 5) * 0.15)
-      ctx.lineWidth = 2.5
+      ctx.lineWidth = 2
       ctx.beginPath()
-      ctx.arc(0, 0, 21, 0, Math.PI * 2)
+      for (let i = 0; i < 6; i++) {
+        const ang = (Math.PI / 3) * i + rot
+        const x = Math.cos(ang) * 22
+        const y = Math.sin(ang) * 22
+        if (i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      }
+      ctx.closePath()
       ctx.stroke()
-      ctx.globalAlpha = 0.12
-      ctx.fillStyle = '#38bdf8'
+      const sg = ctx.createRadialGradient(0, 0, 6, 0, 0, 24)
+      sg.addColorStop(0, 'rgba(56,189,248,0.16)')
+      sg.addColorStop(1, 'rgba(56,189,248,0)')
+      ctx.fillStyle = sg
       ctx.beginPath()
-      ctx.arc(0, 0, 21, 0, Math.PI * 2)
+      ctx.arc(0, 0, 24, 0, Math.PI * 2)
       ctx.fill()
     }
     ctx.restore()
@@ -198,188 +278,52 @@ export class Renderer {
   drawBullets(ctx) {
     const e = this.engine
     for (const b of e.bullets) {
-      const g = ctx.createLinearGradient(b.x, b.y, b.x - b.vx * 0.03, b.y - b.vy * 0.03)
-      g.addColorStop(0, '#fef9c3')
-      g.addColorStop(1, 'rgba(250,204,21,0)')
-      ctx.fillStyle = g
-      ctx.beginPath()
-      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2)
-      ctx.fill()
+      this.img(ctx, 'bullet', b.x, b.y, Math.atan2(b.vy, b.vx) + Math.PI / 2)
     }
   }
 
   drawEnemyBullets(ctx) {
     const e = this.engine
     for (const b of e.ebullets) {
-      const pulse = 1 + Math.sin(this.t * 12) * 0.18
-      ctx.fillStyle = 'rgba(248,113,113,0.28)'
-      ctx.beginPath()
-      ctx.arc(b.x, b.y, b.r * 2 * pulse, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.fillStyle = '#fda4af'
-      ctx.beginPath()
-      ctx.arc(b.x, b.y, b.r * pulse, 0, Math.PI * 2)
-      ctx.fill()
+      this.img(ctx, 'ebullet', b.x, b.y, Math.atan2(b.vy, b.vx) + Math.PI / 2)
     }
   }
 
   drawEnemies(ctx) {
     const e = this.engine
     for (const en of e.enemies) {
-      const pal = ENEMY_PAL[en.type]
       const def = ENEMY_TYPES[en.type]
+      const pulse = 1 + en.flash * 1.6
       ctx.save()
       ctx.translate(en.x, en.y)
       ctx.globalAlpha = en.y < 8 ? 0.3 + (en.y / 8) * 0.7 : 1
-      switch (en.type) {
-        case 'grunt':
-          this.shapeGrunt(ctx, pal)
-          break
-        case 'weaver':
-          this.shapeWeaver(ctx, pal)
-          break
-        case 'mini':
-          this.shapeMini(ctx, pal)
-          break
-        case 'diver':
-          this.shapeDiver(ctx, pal)
-          break
-        case 'sniper':
-          this.shapeSniper(ctx, en, pal)
-          break
-        case 'tank':
-          this.shapeTank(ctx, en, pal)
-          break
-        default:
-          break
-      }
+      this.img(ctx, en.type, 0, 0, 0, pulse)
       if (en.flash > 0) {
-        ctx.globalAlpha = Math.min(1, en.flash * 10) * 0.75
+        ctx.globalAlpha = Math.min(1, en.flash * 10) * 0.7
         ctx.fillStyle = '#ffffff'
         ctx.beginPath()
-        ctx.arc(0, 0, def.r + 2, 0, Math.PI * 2)
+        ctx.arc(0, 0, (def.r + 2) * pulse, 0, Math.PI * 2)
         ctx.fill()
+      }
+      if (en.type === 'sniper' && en.state === 'aim' && en.charge > 0) {
+        const a = 0.5 + Math.sin(this.t * 14) * 0.3
         ctx.globalAlpha = 1
+        ctx.strokeStyle = `rgba(248,113,113,${a})`
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.arc(0, 0, 8 + (1.2 - en.charge) * 14, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      if (en.type === 'tank' && en.hp < en.maxHp) {
+        ctx.globalAlpha = 1
+        ctx.fillStyle = 'rgba(2,6,23,0.6)'
+        ctx.fillRect(-13, 24, 26, 3)
+        ctx.fillStyle = ENEMY_PAL.tank.glow
+        ctx.fillRect(-13, 24, 26 * (en.hp / en.maxHp), 3)
       }
       ctx.restore()
       ctx.globalAlpha = 1
     }
-  }
-
-  shapeGrunt(ctx, pal) {
-    ctx.fillStyle = pal.body
-    ctx.beginPath()
-    ctx.moveTo(0, 13)
-    ctx.lineTo(11, -8)
-    ctx.lineTo(5, -8)
-    ctx.lineTo(0, -4)
-    ctx.lineTo(-5, -8)
-    ctx.lineTo(-11, -8)
-    ctx.closePath()
-    ctx.fill()
-    ctx.fillStyle = pal.dark
-    ctx.beginPath()
-    ctx.arc(0, 2, 3, 0, Math.PI * 2)
-    ctx.fill()
-  }
-
-  shapeWeaver(ctx, pal) {
-    ctx.fillStyle = pal.body
-    ctx.beginPath()
-    ctx.moveTo(0, 14)
-    ctx.lineTo(13, -4)
-    ctx.lineTo(13, -10)
-    ctx.lineTo(0, -4)
-    ctx.lineTo(-13, -10)
-    ctx.lineTo(-13, -4)
-    ctx.closePath()
-    ctx.fill()
-    ctx.fillStyle = pal.glow
-    ctx.beginPath()
-    ctx.arc(0, 4, 3, 0, Math.PI * 2)
-    ctx.fill()
-  }
-
-  shapeMini(ctx, pal) {
-    ctx.fillStyle = pal.body
-    ctx.beginPath()
-    ctx.moveTo(0, 10)
-    ctx.lineTo(7, -9)
-    ctx.lineTo(0, -5)
-    ctx.lineTo(-7, -9)
-    ctx.closePath()
-    ctx.fill()
-    ctx.strokeStyle = pal.glow
-    ctx.lineWidth = 1.5
-    ctx.beginPath()
-    ctx.moveTo(0, 10)
-    ctx.lineTo(0, -9)
-    ctx.stroke()
-  }
-
-  shapeDiver(ctx, pal) {
-    ctx.fillStyle = pal.body
-    ctx.beginPath()
-    ctx.moveTo(0, 15)
-    ctx.lineTo(9, -10)
-    ctx.lineTo(0, -6)
-    ctx.lineTo(-9, -10)
-    ctx.closePath()
-    ctx.fill()
-    ctx.fillStyle = pal.glow
-    ctx.beginPath()
-    ctx.arc(0, 6, 3, 0, Math.PI * 2)
-    ctx.fill()
-  }
-
-  shapeSniper(ctx, en, pal) {
-    ctx.fillStyle = pal.body
-    ctx.beginPath()
-    ctx.moveTo(0, 16)
-    ctx.lineTo(7, 8)
-    ctx.lineTo(15, -4)
-    ctx.lineTo(15, -12)
-    ctx.lineTo(0, -8)
-    ctx.lineTo(-15, -12)
-    ctx.lineTo(-15, -4)
-    ctx.lineTo(-7, 8)
-    ctx.closePath()
-    ctx.fill()
-    ctx.fillStyle = pal.dark
-    ctx.beginPath()
-    ctx.arc(0, 0, 5, 0, Math.PI * 2)
-    ctx.fill()
-    if (en.state === 'aim' && en.charge > 0) {
-      const a = 0.5 + Math.sin(this.t * 14) * 0.3
-      ctx.strokeStyle = `rgba(248,113,113,${a})`
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(0, 0, 8 + (1.2 - en.charge) * 14, 0, Math.PI * 2)
-      ctx.stroke()
-    }
-  }
-
-  shapeTank(ctx, en, pal) {
-    ctx.fillStyle = pal.body
-    ctx.beginPath()
-    ctx.moveTo(0, 22)
-    ctx.lineTo(18, 14)
-    ctx.lineTo(22, -6)
-    ctx.lineTo(14, -18)
-    ctx.lineTo(-14, -18)
-    ctx.lineTo(-22, -6)
-    ctx.lineTo(-18, 14)
-    ctx.closePath()
-    ctx.fill()
-    ctx.fillStyle = pal.dark
-    ctx.beginPath()
-    ctx.arc(0, 0, 7, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = 'rgba(0,0,0,0.4)'
-    ctx.fillRect(-12, -16, 24, 3)
-    const w = (en.hp / en.maxHp) * 24
-    ctx.fillStyle = pal.glow
-    ctx.fillRect(-12, -16, w, 3)
   }
 
   drawBoss(ctx) {
@@ -393,55 +337,16 @@ export class Renderer {
       ctx.fillRect(-46, -46, 92, 92)
       ctx.globalAlpha = 1
     }
-
-    const pal = b.phase === 3 ? { body: '#f43f5e', dark: '#881337', glow: '#fda4af' }
-      : b.phase === 2 ? { body: '#a855f7', dark: '#581c87', glow: '#d8b4fe' }
-        : { body: '#6366f1', dark: '#312e81', glow: '#a5b4fc' }
-
-    ctx.fillStyle = pal.dark
-    ctx.beginPath()
-    ctx.moveTo(0, -52)
-    ctx.lineTo(40, -30)
-    ctx.lineTo(44, 26)
-    ctx.lineTo(30, 44)
-    ctx.lineTo(-30, 44)
-    ctx.lineTo(-44, 26)
-    ctx.lineTo(-40, -30)
-    ctx.closePath()
-    ctx.fill()
-
-    ctx.fillStyle = pal.body
-    ctx.beginPath()
-    ctx.moveTo(0, -42)
-    ctx.lineTo(32, -22)
-    ctx.lineTo(34, 22)
-    ctx.lineTo(20, 38)
-    ctx.lineTo(-20, 38)
-    ctx.lineTo(-34, 22)
-    ctx.lineTo(-32, -22)
-    ctx.closePath()
-    ctx.fill()
-
-    ctx.fillStyle = pal.glow
-    ctx.beginPath()
-    ctx.arc(0, -6, 13, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#0f172a'
-    ctx.beginPath()
-    ctx.arc(0, -6, 6, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.fillStyle = pal.dark
-    ctx.fillRect(-30, 8, 8, 20)
-    ctx.fillRect(22, 8, 8, 20)
-    ctx.fillRect(-12, 18, 24, 6)
+    this.img(ctx, b.phase === 3 ? 'boss3' : b.phase === 2 ? 'boss2' : 'boss1', 0, 0)
 
     const throb = 0.7 + Math.sin(this.t * 10) * 0.3
-    ctx.fillStyle = `rgba(255,140,60,${throb})`
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.fillStyle = `rgba(255,140,60,${throb * 0.8})`
     ctx.beginPath()
-    ctx.arc(-30, 22, 5, 0, Math.PI * 2)
-    ctx.arc(30, 22, 5, 0, Math.PI * 2)
+    ctx.arc(-30, 22, 6, 0, Math.PI * 2)
+    ctx.arc(30, 22, 6, 0, Math.PI * 2)
     ctx.fill()
+    ctx.globalCompositeOperation = 'source-over'
 
     if (e.laser) {
       const L = e.laser
@@ -465,10 +370,12 @@ export class Renderer {
         gg.addColorStop(0, `rgba(255,255,255,${0.95 * fade})`)
         gg.addColorStop(0.05, `rgba(255,60,90,${0.85 * fade})`)
         gg.addColorStop(1, `rgba(255,60,90,0)`)
+        ctx.globalCompositeOperation = 'lighter'
         ctx.fillStyle = gg
         ctx.fillRect(-8, 0, 16, 700)
         ctx.fillStyle = `rgba(255,255,255,${0.9 * fade})`
         ctx.fillRect(-2.5, 0, 5, 700)
+        ctx.globalCompositeOperation = 'source-over'
       }
       ctx.restore()
     }
@@ -506,45 +413,41 @@ export class Renderer {
 
   drawPowerups(ctx) {
     const e = this.engine
+    const key = {
+      gem: 'pupGem',
+      power: 'pupPower',
+      shield: 'pupShield',
+      bomb: 'pupBomb',
+      life: 'pupLife',
+    }
     for (const g of e.powerups) {
-      const pal = PUP_PAL[g.kind]
       const bob = Math.sin(this.t * 4 + g.t * 3) * 3
-      ctx.save()
-      ctx.translate(g.x, g.y + bob)
-      ctx.fillStyle = pal.glow
-      ctx.globalAlpha = 0.3
-      ctx.beginPath()
-      ctx.arc(0, 0, 13, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.globalAlpha = 1
-      ctx.fillStyle = pal.body
-      ctx.beginPath()
-      if (g.kind === 'gem') {
-        ctx.moveTo(0, -9)
-        ctx.lineTo(9, 0)
-        ctx.lineTo(0, 9)
-        ctx.lineTo(-9, 0)
-        ctx.closePath()
-      } else {
-        for (let i = 0; i < 6; i++) {
-          const ang = (Math.PI / 3) * i + Math.PI / 6
-          const r = i % 2 === 0 ? 10 : 6.5
-          ctx.lineTo(Math.cos(ang) * r, Math.sin(ang) * r)
-        }
-        ctx.closePath()
-      }
-      ctx.fill()
-      ctx.fillStyle = '#0f172a'
-      ctx.font = 'bold 9px system-ui, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText({ gem: '', power: 'P', shield: 'S', bomb: 'B', life: '+' }[g.kind], 0, 1)
-      ctx.restore()
+      this.img(ctx, key[g.kind], g.x, g.y + bob, this.t * 1.4 + g.t * 2)
     }
   }
 
   drawParticles(ctx) {
-    for (const p of this.engine.particles.list) {
+    const list = this.engine.particles.list
+    for (const p of list) {
+      const a = 1 - p.t / p.life
+      if (p.type === 'dot') {
+        ctx.globalAlpha = a * (p.opacity ?? 1)
+        ctx.fillStyle = p.color
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
+      } else if (p.type === 'text') {
+        ctx.globalAlpha = Math.min(1, a * 1.6)
+        ctx.font = `bold ${p.size}px system-ui, sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.strokeStyle = 'rgba(2,6,23,0.85)'
+        ctx.lineWidth = 3
+        ctx.strokeText(p.str, p.x, p.y)
+        ctx.fillStyle = p.color
+        ctx.fillText(p.str, p.x, p.y)
+      }
+    }
+    ctx.globalCompositeOperation = 'lighter'
+    for (const p of list) {
       const a = 1 - p.t / p.life
       if (p.type === 'ring') {
         ctx.globalAlpha = a * 0.8
@@ -567,22 +470,9 @@ export class Renderer {
         ctx.moveTo(p.x, p.y)
         ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03)
         ctx.stroke()
-      } else if (p.type === 'text') {
-        ctx.globalAlpha = Math.min(1, a * 1.6)
-        ctx.font = `bold ${p.size}px system-ui, sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.strokeStyle = 'rgba(2,6,23,0.85)'
-        ctx.lineWidth = 3
-        ctx.strokeText(p.str, p.x, p.y)
-        ctx.fillStyle = p.color
-        ctx.fillText(p.str, p.x, p.y)
-      } else {
-        ctx.globalAlpha = a * (p.opacity ?? 1)
-        ctx.fillStyle = p.color
-        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
       }
     }
+    ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = 1
   }
 }

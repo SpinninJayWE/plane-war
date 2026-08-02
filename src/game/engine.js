@@ -114,6 +114,9 @@ export class Engine {
     this.comboT = 0
     this.nextLifeAt = EXTRA_LIFE_EVERY
     this.shake = 0
+    this.shakeDx = 0
+    this.shakeDy = 0
+    this.hitStop = 0
     this.flash = 0
     this.hurtFlash = 0
     this.slowmo = 0
@@ -177,6 +180,14 @@ export class Engine {
 
   vibrate(pattern) {
     try { navigator.vibrate?.(pattern) } catch { /* noop */ }
+  }
+
+  addShake(mag, ang = null) {
+    this.shake = Math.max(this.shake, mag)
+    if (ang !== null) {
+      this.shakeDx = Math.cos(ang)
+      this.shakeDy = Math.sin(ang)
+    }
   }
 
   setPhase(p) {
@@ -405,7 +416,7 @@ export class Engine {
     this.particles.debris(x, y, [pal.glow, pal.body, '#ffd166', '#fff3b0'], 16, 210)
   }
 
-  killEnemy(e, byBomb) {
+  killEnemy(e, byBomb, ang = null) {
     const idx = this.enemies.indexOf(e)
     if (idx === -1) return
     this.enemies.splice(idx, 1)
@@ -430,19 +441,21 @@ export class Engine {
       this.particles.text(e.x, e.y - 12, `+${gained}`, isTank ? '#86efac' : '#ffe08a', isTank ? 16 : 13)
       if (this.streak > 0 && this.streak % 5 === 0) {
         this.particles.text(this.player.x, this.player.y - 36, `连击 x${this.mult()}！`, '#fbbf24', 16)
+        this.particles.shockwave(this.player.x, this.player.y, '#fbbf24', 60, 0.4)
         audio.play('combo')
       }
     }
-    this.shake = Math.max(this.shake, isTank ? 11 : 6)
+    this.addShake(isTank ? 11 : 6, ang)
+    this.hitStop = Math.max(this.hitStop, isTank ? 0.06 : 0.035)
     audio.play('explode')
   }
 
-  damageBoss(dmg) {
+  damageBoss(dmg, ang = null) {
     const b = this.boss
     if (!b) return
     b.hp -= dmg
     b.flash = 0.09
-    this.shake = Math.max(this.shake, 3)
+    this.addShake(3, ang)
     this.particles.spark(b.x + rand(-28, 28), b.y + rand(-20, 26), Math.PI / 2 + rand(-0.6, 0.6))
     audio.play('hit')
     if (b.hp <= 0) {
@@ -458,7 +471,8 @@ export class Engine {
       this.particles.smoke(b.x, b.y, 12)
       const base = this.wave === 10 ? 20000 : 10000
       this.particles.text(b.x, b.y - 30, `+${Math.round(base * this.scoreMul * this.mult())}`, '#fda4af', 20)
-      this.shake = 24
+      this.addShake(24, ang)
+      this.hitStop = Math.max(this.hitStop, 0.12)
       this.slowmo = Math.max(this.slowmo, 0.5)
       this.vibrate([60, 50, 120])
       this.addScore(base)
@@ -470,10 +484,12 @@ export class Engine {
     if (this.phase !== 'playing' || this.bombs <= 0) return
     this.bombs -= 1
     this.flash = 0.55
-    this.shake = 18
+    this.addShake(18)
+    this.hitStop = Math.max(this.hitStop, 0.08)
     this.slowmo = Math.max(this.slowmo, 0.15)
     this.particles.flash(this.player.x, this.player.y, '#ffffff', 170, 0.35)
     this.particles.ring(this.player.x, this.player.y)
+    this.particles.shockwave(this.player.x, this.player.y, '#ffe08a', 260, 0.7)
     this.vibrate(40)
     for (let i = 0; i < this.ebullets.length; i++) this.score += Math.round(20 * this.scoreMul)
     this.ebullets.length = 0
@@ -485,14 +501,15 @@ export class Engine {
     audio.play('bomb')
   }
 
-  hitPlayer() {
+  hitPlayer(ang = null) {
     const p = this.player
     if (p.invuln > 0) return
     if (this.shield > 0) {
       this.shield -= 1
       p.invuln = 1.5
       p.shieldFlash = 0.35
-      this.shake = 8
+      this.addShake(8, ang)
+      this.hitStop = Math.max(this.hitStop, 0.03)
       this.hurtFlash = Math.max(this.hurtFlash, 0.3)
       this.particles.flash(p.x, p.y, '#7dd3fc', 70, 0.3)
       this.particles.shockwave(p.x, p.y, '#7dd3fc', 100, 0.45)
@@ -503,7 +520,8 @@ export class Engine {
     }
     this.lives -= 1
     p.invuln = 2.4
-    this.shake = 18
+    this.addShake(18, ang)
+    this.hitStop = Math.max(this.hitStop, 0.12)
     this.flash = Math.max(this.flash, 0.3)
     this.hurtFlash = 1
     this.slowmo = Math.max(this.slowmo, 0.6)
@@ -590,7 +608,7 @@ export class Engine {
       }
       if (this.boss && circ(b, this.boss, b.r, 34)) {
         this.bullets.splice(i, 1)
-        this.damageBoss(b.dmg)
+        this.damageBoss(b.dmg, Math.atan2(b.vy, b.vx))
         continue
       }
       let hit = false
@@ -599,8 +617,13 @@ export class Engine {
           hit = true
           e.hp -= b.dmg
           e.flash = 0.08
-          this.particles.spark(b.x, b.y, Math.atan2(b.vy, b.vx))
-          if (e.hp <= 0) this.killEnemy(e)
+          const ang = Math.atan2(b.vy, b.vx)
+          this.particles.spark(b.x, b.y, ang)
+          if (e.maxHp > 1 && e.hp > 0) {
+            this.particles.damage(b.x + rand(-5, 5), b.y - 8, b.dmg)
+          }
+          audio.play('enemyHit')
+          if (e.hp <= 0) this.killEnemy(e, false, ang)
           break
         }
       }
@@ -616,7 +639,7 @@ export class Engine {
       }
       if (this.phase === 'playing' && circ(b, this.player, b.r, PLAYER_RADIUS)) {
         this.ebullets.splice(i, 1)
-        this.hitPlayer()
+        this.hitPlayer(Math.atan2(b.vy, b.vx))
       }
     }
   }
@@ -714,7 +737,7 @@ export class Engine {
         this.enemies.splice(i, 1)
         this.burstVisuals(e.x, e.y, e.type)
         this.addScore(def.score)
-        this.hitPlayer()
+        this.hitPlayer(Math.atan2(this.player.y - e.y, this.player.x - e.x))
       }
     }
   }
@@ -960,12 +983,22 @@ export class Engine {
     const now = t / 1000
     const raw = Math.min(0.05, Math.max(0.001, now - (this.lastT || now)))
     this.lastT = now
-    let dt = raw
+    let timeScale = 1
+    if (this.hitStop > 0) {
+      this.hitStop -= raw
+      timeScale = Math.min(timeScale, 0.12)
+    }
     if (this.slowmo > 0) {
       this.slowmo -= raw
-      dt = raw * 0.45
+      timeScale = Math.min(timeScale, 0.45)
     }
-    if (this.shake > 0) this.shake = Math.max(0, this.shake - 34 * dt)
+    const dt = raw * timeScale
+    if (this.shake > 0) {
+      this.shake = Math.max(0, this.shake - 34 * dt)
+      const sd = Math.exp(-6 * raw)
+      this.shakeDx *= sd
+      this.shakeDy *= sd
+    }
     if (this.flash > 0) this.flash = Math.max(0, this.flash - 1.4 * dt)
     if (this.hurtFlash > 0) this.hurtFlash = Math.max(0, this.hurtFlash - 1.5 * dt)
     if (this.bannerT > 0) this.bannerT -= dt

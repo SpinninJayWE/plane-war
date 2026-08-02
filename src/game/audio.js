@@ -108,6 +108,9 @@ export const audio = {
       case 'hit':
         osc('triangle', 320, 0.08, 0.3, 200)
         break
+      case 'enemyHit':
+        osc('triangle', 240 + Math.random() * 90, 0.055, 0.16, 150)
+        break
       case 'explode':
         noise(0.4, 0.5, 900)
         osc('sawtooth', 160, 0.35, 0.35, 40)

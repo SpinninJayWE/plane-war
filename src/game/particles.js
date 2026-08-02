@@ -100,6 +100,10 @@ export class ParticleSystem {
     this.add({ x, y, vx: 0, vy: -44, life: 0.85, t: 0, size, color, str, type: 'text' })
   }
 
+  damage(x, y, dmg) {
+    this.add({ x, y, vx: rand(-14, 14), vy: -58, life: 0.5, t: 0, size: 10, color: '#fecaca', str: `-${dmg}`, type: 'text' })
+  }
+
   trail(x, y, rate) {
     if (Math.random() > rate) return
     this.add({
